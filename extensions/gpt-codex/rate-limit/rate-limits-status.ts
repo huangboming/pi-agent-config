@@ -5,7 +5,8 @@ import {
 	readRateLimitsStatusSettings,
 	type RateLimitsStatusSettings,
 } from "../account/account-store.ts";
-import { CODEX_PROVIDER, getActiveCodexCredential } from "../account/codex-auth.ts";
+import { CODEX_PROVIDER, getSessionCodexCredential } from "../account/codex-auth.ts";
+import type { SessionAccountController } from "../account/session-account.ts";
 import {
 	describeGptRateLimitError,
 	fetchGptRateLimits,
@@ -34,8 +35,11 @@ function isLimitWarning(limit?: { percentLeft: number }): boolean {
 	return limit !== undefined && limit.percentLeft <= 20;
 }
 
-async function fetchStatusData(signal: AbortSignal): Promise<StatusResult> {
-	const credential = await getActiveCodexCredential(signal);
+async function fetchStatusData(
+	sessionAccount: SessionAccountController,
+	signal: AbortSignal,
+): Promise<StatusResult> {
+	const credential = await getSessionCodexCredential(sessionAccount, signal);
 	const snapshot = await fetchGptRateLimits({
 		accessToken: credential.access,
 		accountId: credential.accountId,
@@ -50,7 +54,10 @@ function setStatus(ctx: ExtensionContext, text: string, warning = false): void {
 	ctx.ui.setStatus(STATUS_KEY, warning ? ctx.ui.theme.fg("warning", text) : ctx.ui.theme.fg("dim", text));
 }
 
-export function registerRateLimitsStatus(pi: ExtensionAPI): RateLimitsStatusController {
+export function registerRateLimitsStatus(
+	pi: ExtensionAPI,
+	sessionAccount: SessionAccountController,
+): RateLimitsStatusController {
 	let timer: ReturnType<typeof setInterval> | undefined;
 	let inFlight: Promise<void> | undefined;
 	let refreshController: AbortController | undefined;
@@ -108,7 +115,7 @@ export function registerRateLimitsStatus(pi: ExtensionAPI): RateLimitsStatusCont
 		refreshController = controller;
 		const refresh = (async () => {
 			try {
-				const { text, warning } = await fetchStatusData(controller.signal);
+				const { text, warning } = await fetchStatusData(sessionAccount, controller.signal);
 				if (activeGeneration !== generation) return;
 				if (!force && (!settings.enabled || ctx.model?.provider !== CODEX_PROVIDER)) return;
 				if (text !== "quota unavailable") {

@@ -68,9 +68,10 @@ type StoredAccount = {
 };
 
 export type AccountStore = {
-	activeAccountId?: string;
+	lastSelectedAccountId?: string;
 	accounts: Record<string, StoredAccount>;
 	settings?: GptCodexSettings;
+	piAuthImported?: boolean;
 };
 
 function nowIso(): string {
@@ -201,10 +202,20 @@ function readStore(): AccountStore {
 		};
 	}
 
-	const activeAccountId =
-		typeof parsed.activeAccountId === "string" && accounts[parsed.activeAccountId] ? parsed.activeAccountId : undefined;
+	const selectedAccountId =
+		typeof parsed.lastSelectedAccountId === "string"
+			? parsed.lastSelectedAccountId
+			: typeof parsed.activeAccountId === "string"
+				? parsed.activeAccountId
+				: undefined;
+	const lastSelectedAccountId = selectedAccountId && accounts[selectedAccountId] ? selectedAccountId : undefined;
 	const settings = parseSettings(parsed.settings);
-	return { activeAccountId, accounts, ...(settings ? { settings } : {}) };
+	return {
+		lastSelectedAccountId,
+		accounts,
+		...(settings ? { settings } : {}),
+		...(parsed.piAuthImported === true ? { piAuthImported: true } : {}),
+	};
 }
 
 function writeStore(store: AccountStore): void {
@@ -242,14 +253,21 @@ export function saveRateLimitsStatusSettings(settings: RateLimitsStatusSettings)
 	});
 }
 
-export function saveAccount(store: AccountStore, credential: CodexCredential, select: boolean): void {
+export function saveAccount(store: AccountStore, credential: CodexCredential, markSelected: boolean): void {
 	const now = nowIso();
 	const existing = store.accounts[credential.accountId];
 	store.accounts[credential.accountId] = {
 		credential,
 		createdAt: existing?.createdAt ?? now,
 		updatedAt: now,
-		lastSelectedAt: select ? now : existing?.lastSelectedAt,
+		lastSelectedAt: markSelected ? now : existing?.lastSelectedAt,
 	};
-	if (select) store.activeAccountId = credential.accountId;
+	if (markSelected) store.lastSelectedAccountId = credential.accountId;
+}
+
+export function markAccountSelected(store: AccountStore, accountId: string): void {
+	const account = store.accounts[accountId];
+	if (!account) throw new Error(`ChatGPT account is not saved: ${accountId}`);
+	account.lastSelectedAt = nowIso();
+	store.lastSelectedAccountId = accountId;
 }

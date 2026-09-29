@@ -22,8 +22,7 @@ import {
 	refreshCodexCredential,
 	registerCodexProvider,
 	removeCodexAccount,
-	restoreActiveCodexCredential,
-	selectCodexCredential,
+	saveCodexCredential,
 } from "./codex-auth.ts";
 import {
 	RATE_LIMIT_REFRESH_INTERVAL_OPTIONS,
@@ -42,6 +41,7 @@ import {
 	shortenAccountId,
 } from "../rate-limit/rate-limits.ts";
 import type { RateLimitsStatusController } from "../rate-limit/rate-limits-status.ts";
+import type { SessionAccountController } from "./session-account.ts";
 
 const PRIMARY_COMMAND = "gpt-codex";
 
@@ -157,22 +157,30 @@ function accountLoginInteraction(ctx: ExtensionCommandContext): AuthInteraction 
 	};
 }
 
-async function addAccount(ctx: ExtensionCommandContext, status: RateLimitsStatusController): Promise<void> {
+async function addAccount(
+	ctx: ExtensionCommandContext,
+	status: RateLimitsStatusController,
+	sessionAccount: SessionAccountController,
+): Promise<void> {
 	try {
 		const credential = await loginCodex(accountLoginInteraction(ctx));
-		selectCodexCredential(credential);
+		saveCodexCredential(credential);
+		sessionAccount.select(credential.accountId);
 		status.reconfigure(ctx);
-		ctx.ui.notify(`Added and selected ${shortenAccountId(credential.accountId)}.`, "info");
+		ctx.ui.notify(
+			`Using ${shortenAccountId(credential.accountId)} in this session. New sessions will start with it.`,
+			"info",
+		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (message !== "Login cancelled") ctx.ui.notify(`Failed to add account: ${message}`, "error");
 	}
 }
 
-function sortedAccountIds(store: AccountStore): string[] {
+function sortedAccountIds(store: AccountStore, currentAccountId: string | undefined): string[] {
 	return Object.keys(store.accounts).sort((a, b) => {
-		if (a === store.activeAccountId) return -1;
-		if (b === store.activeAccountId) return 1;
+		if (a === currentAccountId) return -1;
+		if (b === currentAccountId) return 1;
 		const aTime = Date.parse(store.accounts[a]?.lastSelectedAt ?? store.accounts[a]?.updatedAt ?? "") || 0;
 		const bTime = Date.parse(store.accounts[b]?.lastSelectedAt ?? store.accounts[b]?.updatedAt ?? "") || 0;
 		return bTime - aTime;
@@ -202,8 +210,8 @@ type AccountRow = {
 	item: SelectItem;
 };
 
-function buildAccountRows(store: AccountStore): AccountRow[] {
-	const accountIds = sortedAccountIds(store);
+function buildAccountRows(store: AccountStore, currentAccountId: string | undefined): AccountRow[] {
+	const accountIds = sortedAccountIds(store, currentAccountId);
 	const displayIds = uniqueDisplayIds(accountIds);
 
 	return accountIds.map((accountId): AccountRow => {
@@ -211,7 +219,7 @@ function buildAccountRows(store: AccountStore): AccountRow[] {
 		if (!entry) throw new Error(`missing account ${accountId}`);
 
 		const displayId = displayIds.get(accountId) ?? accountId;
-		const label = accountId === store.activeAccountId ? `● active · ${displayId}` : displayId;
+		const label = accountId === currentAccountId ? `● current · ${displayId}` : displayId;
 		return {
 			accountId,
 			credential: entry.credential,
@@ -241,26 +249,34 @@ async function updateAccountRowStatus(row: AccountRow, signal: AbortSignal, onCh
 	}
 }
 
-function switchToAccount(ctx: ExtensionCommandContext, row: AccountRow, status: RateLimitsStatusController): void {
-	selectCodexCredential(row.credential);
+function switchToAccount(
+	ctx: ExtensionCommandContext,
+	row: AccountRow,
+	status: RateLimitsStatusController,
+	sessionAccount: SessionAccountController,
+): void {
+	sessionAccount.select(row.accountId);
 	status.reconfigure(ctx);
-	ctx.ui.notify(`Selected ${shortenAccountId(row.accountId)}.`, "info");
+	ctx.ui.notify(`Using ${shortenAccountId(row.accountId)} in this session. New sessions will start with it.`, "info");
 }
 
 function removeStoredAccount(
 	ctx: ExtensionCommandContext,
 	accountId: string,
 	status: RateLimitsStatusController,
+	sessionAccount: SessionAccountController,
 ): void {
+	const wasCurrent = sessionAccount.getAccountId() === accountId;
 	const result = removeCodexAccount(accountId);
-	if (result.removedActive) status.reconfigure(ctx);
+	if (wasCurrent) status.reconfigure(ctx);
 
 	if (!result.existed) {
 		ctx.ui.notify(`Account ${shortenAccountId(accountId)} was already removed.`, "warning");
 		return;
 	}
 
-	ctx.ui.notify(`Removed ${shortenAccountId(accountId)}.`, "info");
+	const suffix = wasCurrent ? " Select another account before the next request." : "";
+	ctx.ui.notify(`Removed ${shortenAccountId(accountId)}.${suffix}`, wasCurrent ? "warning" : "info");
 }
 
 type AccountHubResult = { type: "switch"; row: AccountRow } | { type: "add" } | { type: "remove"; accountId: string };
@@ -390,37 +406,37 @@ async function selectAccountHubAction(
 	}
 }
 
-async function showAccountHub(ctx: ExtensionCommandContext, status: RateLimitsStatusController): Promise<void> {
+async function showAccountHub(
+	ctx: ExtensionCommandContext,
+	status: RateLimitsStatusController,
+	sessionAccount: SessionAccountController,
+): Promise<void> {
 	if (!ctx.isIdle()) await ctx.waitForIdle();
-	if (restoreActiveCodexCredential()) status.reconfigure(ctx);
 
-	const result = await selectAccountHubAction(ctx, buildAccountRows(readAccountStore()), status);
+	const result = await selectAccountHubAction(
+		ctx,
+		buildAccountRows(readAccountStore(), sessionAccount.getAccountId()),
+		status,
+	);
 	if (!result) return;
-	if (result.type === "switch") return switchToAccount(ctx, result.row, status);
-	if (result.type === "add") return addAccount(ctx, status);
-	return removeStoredAccount(ctx, result.accountId, status);
+	if (result.type === "switch") return switchToAccount(ctx, result.row, status, sessionAccount);
+	if (result.type === "add") return addAccount(ctx, status, sessionAccount);
+	return removeStoredAccount(ctx, result.accountId, status, sessionAccount);
 }
 
-export function registerAccountManager(pi: ExtensionAPI, status: RateLimitsStatusController): void {
-	registerCodexProvider(pi);
-
-	pi.on("session_start", (_event, ctx) => {
-		try {
-			if (restoreActiveCodexCredential()) status.reconfigure(ctx);
-		} catch (error) {
-			if (ctx.mode === "tui") {
-				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`GPT account restore failed: ${message}`, "warning");
-			}
-		}
-	});
+export function registerAccountManager(
+	pi: ExtensionAPI,
+	status: RateLimitsStatusController,
+	sessionAccount: SessionAccountController,
+): void {
+	registerCodexProvider(pi, sessionAccount);
 
 	pi.registerCommand(PRIMARY_COMMAND, {
 		description: "Manage ChatGPT OAuth accounts and rate-limit status",
 		handler: async (_args, ctx) => {
 			try {
 				if (!requireTui(ctx)) return;
-				return showAccountHub(ctx, status);
+				return showAccountHub(ctx, status, sessionAccount);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				ctx.ui.notify(`GPT account command failed: ${message}`, "error");

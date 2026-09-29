@@ -1,7 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-
-import { getAgentDir, ModelRuntime, readStoredCredential, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, readStoredCredential, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	lazyStream,
 	type AuthInteraction,
@@ -17,14 +14,10 @@ import {
 	updateAccountStore,
 	type CodexCredential,
 } from "./account-store.ts";
+import type { SessionAccountController } from "./session-account.ts";
 
 export const CODEX_PROVIDER = "openai-codex";
 
-const AUTH_PATH = join(getAgentDir(), "auth.json");
-const AUTH_LOCK_PATH = `${AUTH_PATH}.lock`;
-const LOCK_TIMEOUT_MS = 5_000;
-const LOCK_STALE_MS = 30_000;
-const LOCK_RETRY_MS = 20;
 const REFRESH_MARGIN_MS = 60_000;
 const BRIDGE_API_KEY = "gpt-codex-extension";
 
@@ -40,70 +33,13 @@ async function getProvider(): Promise<Provider> {
 	return providerPromise;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function errorCode(error: unknown): string | undefined {
-	return isObject(error) && typeof error.code === "string" ? error.code : undefined;
-}
-
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
-}
-
-function sleep(ms: number): void {
-	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-// Pi uses the same sibling lock directory for auth.json writes.
-function acquireAuthLock(): void {
-	mkdirSync(dirname(AUTH_PATH), { recursive: true, mode: 0o700 });
-	if (!existsSync(AUTH_PATH)) {
-		writeFileSync(AUTH_PATH, "{}", { encoding: "utf-8", mode: 0o600 });
-		chmodSync(AUTH_PATH, 0o600);
-	}
-
-	const startedAt = Date.now();
-	for (;;) {
-		try {
-			mkdirSync(AUTH_LOCK_PATH, { mode: 0o700 });
-			return;
-		} catch (error) {
-			if (errorCode(error) !== "EEXIST") throw error;
-			try {
-				if (Date.now() - statSync(AUTH_LOCK_PATH).mtimeMs > LOCK_STALE_MS) {
-					rmSync(AUTH_LOCK_PATH, { recursive: true, force: true });
-					continue;
-				}
-			} catch {
-				continue;
-			}
-			if (Date.now() - startedAt >= LOCK_TIMEOUT_MS) {
-				throw new Error(`Timed out waiting for auth store lock: ${AUTH_LOCK_PATH}`);
-			}
-			sleep(LOCK_RETRY_MS);
-		}
-	}
 }
 
 function readPiCredential(): CodexCredential | undefined {
 	const credential = readStoredCredential(CODEX_PROVIDER);
 	return isCodexCredential(credential) ? credential : undefined;
-}
-
-function writePiCredential(credential: CodexCredential | undefined): void {
-	acquireAuthLock();
-	try {
-		const auth = JSON.parse(readFileSync(AUTH_PATH, "utf-8")) as unknown;
-		if (!isObject(auth)) throw new Error(`Invalid auth store: ${AUTH_PATH}`);
-		if (credential) auth[CODEX_PROVIDER] = credential;
-		else delete auth[CODEX_PROVIDER];
-		writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2), { encoding: "utf-8", mode: 0o600 });
-		chmodSync(AUTH_PATH, 0o600);
-	} finally {
-		rmSync(AUTH_LOCK_PATH, { recursive: true, force: true });
-	}
 }
 
 function asCodexCredential(credentials: OAuthCredentials): CodexCredential {
@@ -113,47 +49,31 @@ function asCodexCredential(credentials: OAuthCredentials): CodexCredential {
 	return { ...credentials, type: "oauth", accountId: credentials.accountId };
 }
 
-export function readActiveCodexCredential(): CodexCredential | undefined {
-	const store = readAccountStore();
-	return store.activeAccountId ? store.accounts[store.activeAccountId]?.credential : readPiCredential();
-}
-
-export function selectCodexCredential(credential: CodexCredential): void {
-	updateAccountStore((store) => saveAccount(store, credential, true));
-	writePiCredential(credential);
-}
-
-export function removeCodexAccount(accountId: string): { existed: boolean; removedActive: boolean } {
-	const result = updateAccountStore((store) => {
-		const existed = !!store.accounts[accountId];
-		const removedActive = store.activeAccountId === accountId;
-		delete store.accounts[accountId];
-		if (removedActive) store.activeAccountId = undefined;
-		return { existed, removedActive };
+export function initializeCodexAccountStore(): void {
+	if (readAccountStore().piAuthImported) return;
+	const credential = readPiCredential();
+	updateAccountStore((store) => {
+		if (store.piAuthImported) return;
+		if (credential) saveAccount(store, credential, store.lastSelectedAccountId === undefined);
+		store.piAuthImported = true;
 	});
-	if (result.removedActive) writePiCredential(undefined);
-	return result;
 }
 
-export function restoreActiveCodexCredential(): boolean {
-	const store = readAccountStore();
-	if (!store.activeAccountId) {
-		const credential = readPiCredential();
-		if (!credential) return false;
-		updateAccountStore((current) => saveAccount(current, credential, true));
-		return true;
-	}
+export function saveCodexCredential(credential: CodexCredential): void {
+	updateAccountStore((store) => saveAccount(store, credential, false));
+}
 
-	const active = store.accounts[store.activeAccountId]!.credential;
-	const current = readPiCredential();
-	if (current?.accountId !== active.accountId) {
-		writePiCredential(active);
-		return true;
-	}
-	if (current.access !== active.access || current.refresh !== active.refresh || current.expires !== active.expires) {
-		updateAccountStore((store) => saveAccount(store, current, true));
-	}
-	return false;
+export function removeCodexAccount(accountId: string): { existed: boolean } {
+	return updateAccountStore((store) => {
+		const existed = !!store.accounts[accountId];
+		delete store.accounts[accountId];
+		if (store.lastSelectedAccountId === accountId) store.lastSelectedAccountId = undefined;
+		return { existed };
+	});
+}
+
+function readCodexCredential(accountId: string): CodexCredential | undefined {
+	return readAccountStore().accounts[accountId]?.credential;
 }
 
 export async function refreshCodexCredential(
@@ -178,19 +98,23 @@ export async function refreshCodexCredential(
 	}
 
 	const refreshed = await refresh;
-	const isActive = updateAccountStore((store) => {
-		if (!store.accounts[credential.accountId]) return false;
-		saveAccount(store, refreshed, false);
-		return store.activeAccountId === credential.accountId;
+	updateAccountStore((store) => {
+		if (store.accounts[credential.accountId]) saveAccount(store, refreshed, false);
 	});
-	if (isActive) writePiCredential(refreshed);
 	return refreshed;
 }
 
-export async function getActiveCodexCredential(signal?: AbortSignal): Promise<CodexCredential> {
-	const credential = readActiveCodexCredential();
-	if (!credential) {
+export async function getSessionCodexCredential(
+	sessionAccount: SessionAccountController,
+	signal?: AbortSignal,
+): Promise<CodexCredential> {
+	const accountId = sessionAccount.getAccountId();
+	if (!accountId) {
 		throw new Error("ChatGPT subscription auth missing. Open /gpt-codex and press a, or run /login.");
+	}
+	const credential = readCodexCredential(accountId);
+	if (!credential) {
+		throw new Error("This session's ChatGPT account is no longer saved. Open /gpt-codex and select an account.");
 	}
 	try {
 		return await refreshCodexCredential(credential, signal);
@@ -241,25 +165,30 @@ export async function loginCodex(interaction: AuthInteraction): Promise<CodexCre
 	return asCodexCredential(await provider.auth.oauth!.login(interaction));
 }
 
-export function registerCodexProvider(pi: ExtensionAPI): void {
+export function registerCodexProvider(pi: ExtensionAPI, sessionAccount: SessionAccountController): void {
 	pi.registerProvider(CODEX_PROVIDER, {
 		api: "openai-codex-responses",
-		// The bridge must be considered configured before it can resolve the selected account in streamSimple.
+		// The bridge must be considered configured before it can resolve the session account in streamSimple.
 		apiKey: BRIDGE_API_KEY,
 		streamSimple: (model, context, options) =>
 			lazyStream(model, async () => {
-				const [credential, provider] = await Promise.all([getActiveCodexCredential(options?.signal), getProvider()]);
+				const [credential, provider] = await Promise.all([
+					getSessionCodexCredential(sessionAccount, options?.signal),
+					getProvider(),
+				]);
 				return provider.streamSimple(model, context, { ...options, apiKey: credential.access });
 			}),
 		oauth: {
 			name: "OpenAI (ChatGPT Plus/Pro)",
 			async login(callbacks) {
 				const credential = await loginCodex(loginInteraction(callbacks));
-				selectCodexCredential(credential);
+				saveCodexCredential(credential);
+				sessionAccount.select(credential.accountId);
 				return credential;
 			},
 			async refreshToken(credentials) {
-				return refreshCodexCredential(readActiveCodexCredential() ?? asCodexCredential(credentials));
+				const credential = asCodexCredential(credentials);
+				return refreshCodexCredential(readCodexCredential(credential.accountId) ?? credential);
 			},
 			getApiKey: (credentials) => credentials.access,
 		},
