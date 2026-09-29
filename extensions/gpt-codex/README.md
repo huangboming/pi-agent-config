@@ -1,34 +1,20 @@
 # gpt-codex
 
-ChatGPT Codex helpers for Pi's `openai-codex` provider.
+Multi-account ChatGPT OAuth and subscription quota status for Pi's `openai-codex` provider.
 
-This extension combines:
+## Features
 
-- multiple ChatGPT Plus/Pro OAuth account management
-- footer status for the subscription's 5-hour and 7-day rate-limit windows
+- `/gpt-codex` opens a TUI for adding, removing, refreshing, and switching accounts, plus configuring quota refresh.
+- Account switches apply to the running provider without restarting Pi.
+- The footer reports the active account's 5-hour and 7-day quota while `openai-codex` is selected.
 
-Pi stores one credential per provider. This extension keeps multiple OpenAI Codex OAuth credentials in `~/.pi/agent/gpt-accounts.json` and copies the selected account into Pi's normal `auth.json` entry for `openai-codex`. On Pi 0.80+, a provider bridge also applies account switches to the running process without requiring a restart.
+## Runtime contracts
 
-## Commands
+- `~/.pi/agent/gpt-accounts.json` is the saved-account and extension-settings store. The selected credential is mirrored to Pi's `openai-codex` entry in `auth.json`.
+- Startup reconciles the selected account with Pi auth in every mode. Removing the active account clears Pi auth and leaves no implicit replacement.
+- Expired credentials are refreshed per account; a refreshed active credential is written to both stores before use.
+- Account state is written with `0600` permissions and lock-protected read-modify-write updates. No credentials belong in this repository.
+- The management command is TUI-only; provider registration and startup restore are not.
+- Quota requests use the selected account, time out after 5 seconds, and back off for 60 seconds after failure. Refresh cancellation is independent of agent cancellation.
 
-```text
-/gpt-codex           # open tabbed account UI
-```
-
-Interactive account management and config are TUI-only. `/gpt-codex` opens on the Accounts tab; press Tab/Shift+Tab to switch between Accounts and Config. In Accounts, use `a` to add, `d` to remove, `r` to refresh account limits, and Enter to switch. Saved account restore still runs at startup in every mode.
-
-The account switcher shows each saved account with rate-limit status so you can choose which account to use. Account ids are OpenAI UUIDs and are shortened in the UI.
-
-When the active model provider is `openai-codex`, the footer shows current usage from `https://chatgpt.com/backend-api/wham/usage`, for example:
-
-```text
-GPT(123e45…4000, plus): 5h 98% left/3h 57m · 7d 92% left/5d 17h
-```
-
-By default, status refreshes after account changes, model changes, tool execution, agent completion, and every 5 minutes. The Config tab can enable/disable the footer status, periodic refresh, refresh interval, and refresh-on-agent/turn/tool triggers. Press `r` in Config for a one-off footer status refresh. Settings are stored with the accounts in `~/.pi/agent/gpt-accounts.json`.
-
-Fetches have a 5s timeout and a 60s failure backoff. Footer refreshes are independent of the current agent run, so stopping the agent does not mark the last status stale. Failure states distinguish missing auth, token refresh failures, usage endpoint 401/403 responses, timeouts, network errors, and account mismatches.
-
-Account data is stored with `0600` permissions and guarded by a lock file during read-modify-write updates. Removing the active account clears `auth.json` for `openai-codex` and leaves no active account until you add or switch again.
-
-`PI_GPT_LIMITS_USAGE_URL` can override the usage endpoint for testing.
+`PI_GPT_LIMITS_USAGE_URL` overrides the quota endpoint for testing.
