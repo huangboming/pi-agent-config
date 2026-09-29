@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+auth.json
+gpt-accounts.json
+_models.json
+models-store.json
+trust.json
+sessions/
+npm/
+web-search-cache/

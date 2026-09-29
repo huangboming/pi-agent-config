@@ -1,0 +1,10 @@
+{
+  "name": "pi-agent-config",
+  "private": true,
+  "pi": {
+    "extensions": ["extensions"],
+    "skills": ["skills"],
+    "prompts": ["prompts"],
+    "themes": ["themes"]
+  }
+}
