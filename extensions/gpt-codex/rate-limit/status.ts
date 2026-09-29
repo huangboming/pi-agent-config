@@ -4,14 +4,10 @@ import {
 	DEFAULT_RATE_LIMITS_STATUS_SETTINGS,
 	readRateLimitsStatusSettings,
 	type RateLimitsStatusSettings,
-} from "../account/account-store.ts";
-import { CODEX_PROVIDER, getSessionCodexCredential } from "../account/codex-auth.ts";
-import type { SessionAccountController } from "../account/session-account.ts";
-import {
-	describeGptRateLimitError,
-	fetchGptRateLimits,
-	formatGptRateLimitSnapshot,
-} from "./rate-limits.ts";
+} from "./settings.ts";
+import { CODEX_PROVIDER, getSessionCodexCredential } from "../account/auth.ts";
+import type { SessionAccountController } from "../account/session.ts";
+import { describeGptRateLimitError, fetchGptRateLimits, formatGptRateLimitSnapshot } from "./usage.ts";
 
 const STATUS_KEY = "gpt-rate-limits";
 const FAILURE_RETRY_INTERVAL_MS = 60_000;

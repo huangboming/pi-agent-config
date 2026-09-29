@@ -14,6 +14,9 @@ import { dirname, join } from "node:path";
 
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
+import { errorCode } from "../common/errors.ts";
+import { isRecord } from "../common/guards.ts";
+
 const STORE_PATH = join(getAgentDir(), "gpt-accounts.json");
 const LOCK_PATH = `${STORE_PATH}.lock`;
 const LOCK_TIMEOUT_MS = 5_000;
@@ -29,37 +32,6 @@ export type CodexCredential = {
 	[key: string]: unknown;
 };
 
-export const RATE_LIMIT_REFRESH_INTERVAL_OPTIONS = [
-	{ label: "1m", intervalMs: 60_000 },
-	{ label: "5m", intervalMs: 5 * 60_000 },
-	{ label: "10m", intervalMs: 10 * 60_000 },
-	{ label: "30m", intervalMs: 30 * 60_000 },
-	{ label: "1h", intervalMs: 60 * 60_000 },
-] as const;
-
-export type RateLimitsStatusSettings = {
-	enabled: boolean;
-	periodicRefresh: boolean;
-	intervalMs: number;
-	refreshOnAgentEnd: boolean;
-	refreshOnTurnEnd: boolean;
-	refreshOnToolExecutionEnd: boolean;
-};
-
-export const DEFAULT_RATE_LIMITS_STATUS_SETTINGS: RateLimitsStatusSettings = {
-	enabled: true,
-	periodicRefresh: true,
-	intervalMs: 5 * 60_000,
-	refreshOnAgentEnd: true,
-	refreshOnTurnEnd: false,
-	refreshOnToolExecutionEnd: true,
-};
-
-type GptCodexSettings = {
-	rateLimitsStatus?: RateLimitsStatusSettings;
-	[key: string]: unknown;
-};
-
 type StoredAccount = {
 	credential: CodexCredential;
 	createdAt: string;
@@ -70,20 +42,12 @@ type StoredAccount = {
 export type AccountStore = {
 	lastSelectedAccountId?: string;
 	accounts: Record<string, StoredAccount>;
-	settings?: GptCodexSettings;
+	settings?: Record<string, unknown>;
 	piAuthImported?: boolean;
 };
 
 function nowIso(): string {
 	return new Date().toISOString();
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
-
-function errorCode(error: unknown): string | undefined {
-	return isObject(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function sleepSync(ms: number): void {
@@ -135,7 +99,7 @@ function withStoreLock<T>(fn: () => T): T {
 }
 
 export function isCodexCredential(value: unknown): value is CodexCredential {
-	if (!isObject(value)) return false;
+	if (!isRecord(value)) return false;
 	return (
 		value.type === "oauth" &&
 		typeof value.access === "string" &&
@@ -145,54 +109,14 @@ export function isCodexCredential(value: unknown): value is CodexCredential {
 	);
 }
 
-function booleanSetting(value: unknown, fallback: boolean): boolean {
-	return typeof value === "boolean" ? value : fallback;
-}
-
-function intervalSetting(value: unknown): number {
-	return RATE_LIMIT_REFRESH_INTERVAL_OPTIONS.some((option) => option.intervalMs === value)
-		? (value as number)
-		: DEFAULT_RATE_LIMITS_STATUS_SETTINGS.intervalMs;
-}
-
-function parseRateLimitsStatusSettings(value: unknown): RateLimitsStatusSettings {
-	const input = isObject(value) ? value : {};
-	return {
-		enabled: booleanSetting(input.enabled, DEFAULT_RATE_LIMITS_STATUS_SETTINGS.enabled),
-		periodicRefresh: booleanSetting(input.periodicRefresh, DEFAULT_RATE_LIMITS_STATUS_SETTINGS.periodicRefresh),
-		intervalMs: intervalSetting(input.intervalMs),
-		refreshOnAgentEnd: booleanSetting(input.refreshOnAgentEnd, DEFAULT_RATE_LIMITS_STATUS_SETTINGS.refreshOnAgentEnd),
-		refreshOnTurnEnd: booleanSetting(input.refreshOnTurnEnd, DEFAULT_RATE_LIMITS_STATUS_SETTINGS.refreshOnTurnEnd),
-		refreshOnToolExecutionEnd: booleanSetting(
-			input.refreshOnToolExecutionEnd,
-			DEFAULT_RATE_LIMITS_STATUS_SETTINGS.refreshOnToolExecutionEnd,
-		),
-	};
-}
-
-function parseSettings(value: unknown): GptCodexSettings | undefined {
-	if (!isObject(value)) return undefined;
-	const settings: GptCodexSettings = { ...value };
-	if ("rateLimitsStatus" in value) settings.rateLimitsStatus = parseRateLimitsStatusSettings(value.rateLimitsStatus);
-	return settings;
-}
-
-export function rateLimitRefreshIntervalLabel(intervalMs: number): string {
-	return RATE_LIMIT_REFRESH_INTERVAL_OPTIONS.find((option) => option.intervalMs === intervalMs)?.label ?? "5m";
-}
-
-export function rateLimitRefreshIntervalFromLabel(label: string): number | undefined {
-	return RATE_LIMIT_REFRESH_INTERVAL_OPTIONS.find((option) => option.label === label)?.intervalMs;
-}
-
 function readStore(): AccountStore {
 	if (!existsSync(STORE_PATH)) return { accounts: {} };
 	const parsed = JSON.parse(readFileSync(STORE_PATH, "utf-8")) as unknown;
-	if (!isObject(parsed) || !isObject(parsed.accounts)) return { accounts: {} };
+	if (!isRecord(parsed) || !isRecord(parsed.accounts)) return { accounts: {} };
 
 	const accounts: Record<string, StoredAccount> = {};
 	for (const [accountId, account] of Object.entries(parsed.accounts)) {
-		if (!isObject(account) || !isCodexCredential(account.credential)) continue;
+		if (!isRecord(account) || !isCodexCredential(account.credential)) continue;
 		if (account.credential.accountId !== accountId) continue;
 		accounts[accountId] = {
 			credential: account.credential,
@@ -209,7 +133,7 @@ function readStore(): AccountStore {
 				? parsed.activeAccountId
 				: undefined;
 	const lastSelectedAccountId = selectedAccountId && accounts[selectedAccountId] ? selectedAccountId : undefined;
-	const settings = parseSettings(parsed.settings);
+	const settings = isRecord(parsed.settings) ? { ...parsed.settings } : undefined;
 	return {
 		lastSelectedAccountId,
 		accounts,
@@ -237,19 +161,6 @@ export function updateAccountStore<T>(mutate: (store: AccountStore) => T): T {
 		const result = mutate(store);
 		writeStore(store);
 		return result;
-	});
-}
-
-export function readRateLimitsStatusSettings(): RateLimitsStatusSettings {
-	return readAccountStore().settings?.rateLimitsStatus ?? { ...DEFAULT_RATE_LIMITS_STATUS_SETTINGS };
-}
-
-export function saveRateLimitsStatusSettings(settings: RateLimitsStatusSettings): void {
-	updateAccountStore((store) => {
-		store.settings = {
-			...(store.settings ?? {}),
-			rateLimitsStatus: parseRateLimitsStatusSettings(settings),
-		};
 	});
 }
 

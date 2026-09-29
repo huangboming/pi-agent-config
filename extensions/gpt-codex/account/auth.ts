@@ -7,14 +7,15 @@ import {
 	type Provider,
 } from "@earendil-works/pi-ai";
 
+import { errorMessage } from "../common/errors.ts";
 import {
 	isCodexCredential,
 	readAccountStore,
 	saveAccount,
 	updateAccountStore,
 	type CodexCredential,
-} from "./account-store.ts";
-import type { SessionAccountController } from "./session-account.ts";
+} from "./store.ts";
+import type { SessionAccountController } from "./session.ts";
 
 export const CODEX_PROVIDER = "openai-codex";
 
@@ -31,10 +32,6 @@ async function getProvider(): Promise<Provider> {
 		return provider;
 	});
 	return providerPromise;
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
 }
 
 function readPiCredential(): CodexCredential | undefined {

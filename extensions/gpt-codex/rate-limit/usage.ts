@@ -1,3 +1,6 @@
+import { errorMessage } from "../common/errors.ts";
+import { isRecord } from "../common/guards.ts";
+
 const USAGE_URL = process.env.PI_GPT_LIMITS_USAGE_URL ?? "https://chatgpt.com/backend-api/wham/usage";
 const FETCH_TIMEOUT_MS = 5_000;
 const TIMEOUT_ERROR = `usage request timed out after ${FETCH_TIMEOUT_MS / 1000}s`;
@@ -39,12 +42,8 @@ type FetchRateLimitsInput = {
 	signal?: AbortSignal;
 };
 
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
 export function describeGptRateLimitError(error: unknown): string {
-	if (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError") {
+	if (isRecord(error) && error.name === "AbortError") {
 		return "request aborted";
 	}
 	return errorMessage(error);
@@ -163,11 +162,6 @@ function formatLimits(snapshot: RateLimitSnapshot): string | undefined {
 		snapshot.weeklyLimit ? formatLimit("7d", snapshot.weeklyLimit, "days-hours") : undefined,
 	].filter((limit): limit is string => limit !== undefined);
 	return limits.length ? limits.join(" · ") : undefined;
-}
-
-export function shortenAccountId(accountId: string, prefixLength = 6, suffixLength = 4): string {
-	if (accountId.length <= prefixLength + suffixLength + 1) return accountId;
-	return `${accountId.slice(0, prefixLength)}…${accountId.slice(-suffixLength)}`;
 }
 
 export function formatGptRateLimitSnapshot(snapshot: RateLimitSnapshot): string {

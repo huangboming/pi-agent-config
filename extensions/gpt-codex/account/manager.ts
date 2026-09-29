@@ -1,9 +1,7 @@
-import { spawn } from "node:child_process";
 import {
 	DynamicBorder,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
-	type ExtensionContext,
 	getSettingsListTheme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -11,7 +9,6 @@ import {
 	matchesKey,
 	type SelectItem,
 	SelectList,
-	type SettingItem,
 	SettingsList,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
@@ -23,101 +20,26 @@ import {
 	registerCodexProvider,
 	removeCodexAccount,
 	saveCodexCredential,
-} from "./codex-auth.ts";
-import {
-	RATE_LIMIT_REFRESH_INTERVAL_OPTIONS,
-	type AccountStore,
-	type CodexCredential,
-	rateLimitRefreshIntervalFromLabel,
-	rateLimitRefreshIntervalLabel,
-	readAccountStore,
-	readRateLimitsStatusSettings,
-	saveRateLimitsStatusSettings,
-} from "./account-store.ts";
+} from "./auth.ts";
+import { type AccountStore, type CodexCredential, readAccountStore } from "./store.ts";
+import { shortenAccountId, uniqueAccountDisplayIds } from "../common/account-id.ts";
+import { openUrl } from "../common/browser.ts";
+import { errorMessage } from "../common/errors.ts";
+import { rateLimitsStatusSettingsItems, updateRateLimitsStatusSetting } from "../rate-limit/settings.ts";
+import type { RateLimitsStatusController } from "../rate-limit/status.ts";
 import {
 	describeGptRateLimitError,
 	fetchGptRateLimits,
 	formatGptRateLimitDescription,
-	shortenAccountId,
-} from "../rate-limit/rate-limits.ts";
-import type { RateLimitsStatusController } from "../rate-limit/rate-limits-status.ts";
-import type { SessionAccountController } from "./session-account.ts";
+} from "../rate-limit/usage.ts";
+import type { SessionAccountController } from "./session.ts";
 
 const PRIMARY_COMMAND = "gpt-codex";
-
-function openUrl(url: string): void {
-	const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-	const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-	try {
-		const child = spawn(command, args, { detached: true, stdio: "ignore" });
-		child.unref();
-	} catch {
-		// The prompt still shows the URL for manual opening.
-	}
-}
 
 function requireTui(ctx: ExtensionCommandContext): boolean {
 	if (ctx.mode === "tui") return true;
 	if (ctx.hasUI) ctx.ui.notify("gpt-codex account UI requires TUI mode.", "warning");
 	return false;
-}
-
-function statusSettingsItems(): SettingItem[] {
-	const settings = readRateLimitsStatusSettings();
-	return [
-		{
-			id: "enabled",
-			label: "Rate-limit status",
-			currentValue: settings.enabled ? "enabled" : "disabled",
-			values: ["enabled", "disabled"],
-		},
-		{
-			id: "periodicRefresh",
-			label: "Periodic refresh",
-			currentValue: settings.periodicRefresh ? "on" : "off",
-			values: ["on", "off"],
-		},
-		{
-			id: "intervalMs",
-			label: "Refresh interval",
-			currentValue: rateLimitRefreshIntervalLabel(settings.intervalMs),
-			values: RATE_LIMIT_REFRESH_INTERVAL_OPTIONS.map((option) => option.label),
-		},
-		{
-			id: "refreshOnAgentEnd",
-			label: "After agent completes",
-			currentValue: settings.refreshOnAgentEnd ? "on" : "off",
-			values: ["on", "off"],
-		},
-		{
-			id: "refreshOnTurnEnd",
-			label: "After each turn completes",
-			currentValue: settings.refreshOnTurnEnd ? "on" : "off",
-			values: ["on", "off"],
-		},
-		{
-			id: "refreshOnToolExecutionEnd",
-			label: "After each tool completes",
-			currentValue: settings.refreshOnToolExecutionEnd ? "on" : "off",
-			values: ["on", "off"],
-		},
-	];
-}
-
-function saveStatusSetting(id: string, value: string, status: RateLimitsStatusController, ctx: ExtensionContext): void {
-	const settings = readRateLimitsStatusSettings();
-	const next = { ...settings };
-
-	if (id === "enabled") next.enabled = value === "enabled";
-	else if (id === "periodicRefresh") next.periodicRefresh = value === "on";
-	else if (id === "intervalMs") next.intervalMs = rateLimitRefreshIntervalFromLabel(value) ?? next.intervalMs;
-	else if (id === "refreshOnAgentEnd") next.refreshOnAgentEnd = value === "on";
-	else if (id === "refreshOnTurnEnd") next.refreshOnTurnEnd = value === "on";
-	else if (id === "refreshOnToolExecutionEnd") next.refreshOnToolExecutionEnd = value === "on";
-	else return;
-
-	saveRateLimitsStatusSettings(next);
-	status.reconfigure(ctx);
 }
 
 function accountLoginInteraction(ctx: ExtensionCommandContext): AuthInteraction {
@@ -172,7 +94,7 @@ async function addAccount(
 			"info",
 		);
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = errorMessage(error);
 		if (message !== "Login cancelled") ctx.ui.notify(`Failed to add account: ${message}`, "error");
 	}
 }
@@ -187,23 +109,6 @@ function sortedAccountIds(store: AccountStore, currentAccountId: string | undefi
 	});
 }
 
-function uniqueDisplayIds(accountIds: string[]): Map<string, string> {
-	const lengths = [
-		[6, 4],
-		[8, 6],
-		[10, 8],
-		[12, 12],
-	] as const;
-
-	for (const [prefixLength, suffixLength] of lengths) {
-		const labels = accountIds.map((id) => shortenAccountId(id, prefixLength, suffixLength));
-		if (new Set(labels).size === labels.length) {
-			return new Map(accountIds.map((id, index) => [id, labels[index] ?? id]));
-		}
-	}
-	return new Map(accountIds.map((id) => [id, id]));
-}
-
 type AccountRow = {
 	accountId: string;
 	credential: CodexCredential;
@@ -212,7 +117,7 @@ type AccountRow = {
 
 function buildAccountRows(store: AccountStore, currentAccountId: string | undefined): AccountRow[] {
 	const accountIds = sortedAccountIds(store, currentAccountId);
-	const displayIds = uniqueDisplayIds(accountIds);
+	const displayIds = uniqueAccountDisplayIds(accountIds);
 
 	return accountIds.map((accountId): AccountRow => {
 		const entry = store.accounts[accountId];
@@ -317,10 +222,12 @@ async function selectAccountHubAction(
 					)
 				: undefined;
 			const configList = new SettingsList(
-				statusSettingsItems(),
+				rateLimitsStatusSettingsItems(),
 				8,
 				getSettingsListTheme(),
-				(id, value) => saveStatusSetting(id, value, status, ctx),
+				(id, value) => {
+					if (updateRateLimitsStatusSetting(id, value)) status.reconfigure(ctx);
+				},
 				() => close(null),
 			);
 
@@ -438,8 +345,7 @@ export function registerAccountManager(
 				if (!requireTui(ctx)) return;
 				return showAccountHub(ctx, status, sessionAccount);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`GPT account command failed: ${message}`, "error");
+				ctx.ui.notify(`GPT account command failed: ${errorMessage(error)}`, "error");
 			}
 		},
 	});

@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { registerAccountManager } from "./account/account-manager.ts";
-import { initializeCodexAccountStore } from "./account/codex-auth.ts";
-import { registerSessionAccount } from "./account/session-account.ts";
-import { registerRateLimitsStatus } from "./rate-limit/rate-limits-status.ts";
+import { initializeCodexAccountStore } from "./account/auth.ts";
+import { registerAccountManager } from "./account/manager.ts";
+import { registerSessionAccount } from "./account/session.ts";
+import { registerRateLimitsStatus } from "./rate-limit/status.ts";
 
 export default function (pi: ExtensionAPI) {
 	initializeCodexAccountStore();
