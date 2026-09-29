@@ -37,6 +37,7 @@ type StoredAccount = {
 	createdAt: string;
 	updatedAt: string;
 	lastSelectedAt?: string;
+	alias?: string;
 };
 
 export type AccountStore = {
@@ -48,6 +49,10 @@ export type AccountStore = {
 
 function nowIso(): string {
 	return new Date().toISOString();
+}
+
+function normalizeAccountAlias(alias: string): string | undefined {
+	return alias.trim() || undefined;
 }
 
 function sleepSync(ms: number): void {
@@ -123,6 +128,7 @@ function readStore(): AccountStore {
 			createdAt: typeof account.createdAt === "string" ? account.createdAt : nowIso(),
 			updatedAt: typeof account.updatedAt === "string" ? account.updatedAt : nowIso(),
 			lastSelectedAt: typeof account.lastSelectedAt === "string" ? account.lastSelectedAt : undefined,
+			alias: typeof account.alias === "string" ? normalizeAccountAlias(account.alias) : undefined,
 		};
 	}
 
@@ -155,6 +161,10 @@ export function readAccountStore(): AccountStore {
 	return readStore();
 }
 
+export function readAccountAlias(accountId: string): string | undefined {
+	return readStore().accounts[accountId]?.alias;
+}
+
 export function updateAccountStore<T>(mutate: (store: AccountStore) => T): T {
 	return withStoreLock(() => {
 		const store = readStore();
@@ -172,8 +182,30 @@ export function saveAccount(store: AccountStore, credential: CodexCredential, ma
 		createdAt: existing?.createdAt ?? now,
 		updatedAt: now,
 		lastSelectedAt: markSelected ? now : existing?.lastSelectedAt,
+		alias: existing?.alias,
 	};
 	if (markSelected) store.lastSelectedAccountId = credential.accountId;
+}
+
+export function saveAccountAlias(accountId: string, alias: string | undefined): string | undefined {
+	const normalized = normalizeAccountAlias(alias ?? "");
+	return updateAccountStore((store) => {
+		const account = store.accounts[accountId];
+		if (!account) throw new Error(`ChatGPT account is not saved: ${accountId}`);
+
+		if (normalized) {
+			const aliasKey = normalized.toLowerCase();
+			const duplicate = Object.entries(store.accounts).find(
+				([otherAccountId, other]) =>
+					otherAccountId !== accountId && other.alias?.toLowerCase() === aliasKey,
+			);
+			if (duplicate) throw new Error(`Alias "${normalized}" is already in use.`);
+			account.alias = normalized;
+		} else {
+			delete account.alias;
+		}
+		return normalized;
+	});
 }
 
 export function markAccountSelected(store: AccountStore, accountId: string): void {

@@ -4,10 +4,10 @@ Session-scoped multi-account ChatGPT OAuth and subscription quota status for Pi'
 
 ## Features
 
-- `/gpt-codex` opens a TUI for adding, removing, refreshing, and selecting ChatGPT accounts, plus configuring quota refresh.
+- `/gpt-codex` opens a TUI for adding, naming, removing, refreshing, and selecting ChatGPT accounts, plus configuring quota refresh.
 - Selecting an account applies to the current Pi session on its next request without restarting Pi.
 - Existing sessions keep their own selections; new sessions start with the most recently selected account.
-- The footer reports the current session account's 5-hour and 7-day quota while `openai-codex` is selected.
+- The footer reports the current session account's plan plus 5-hour and 7-day quota while `openai-codex` is selected, using forms such as `quota(alias,plan-type)`.
 
 ## Runtime contracts
 
@@ -15,6 +15,7 @@ Session-scoped multi-account ChatGPT OAuth and subscription quota status for Pi'
 - `~/.pi/agent/gpt-accounts.json` is the credential, most-recent-selection, and extension-settings store. A valid Pi Codex OAuth credential is imported once for compatibility; session switches do not rewrite `auth.json`.
 - Each Pi session persists its selected account in a custom session entry. `/tree` does not change it, while new and forked sessions start with the most recently selected account.
 - Selecting or adding an account updates the current session and the seed for future sessions. It never changes another existing session.
+- Accounts may have optional, case-insensitively unique local aliases. The `/gpt-codex` add flow offers one after OAuth; `/login` remains unchanged. Named accounts show only their alias, while unnamed accounts fall back to a shortened account ID.
 - Removing an account never falls back implicitly. Sessions that reference it must explicitly select another account before making a request.
 - Expired credentials are refreshed in the account store before use. Refreshes that return a different account ID are rejected.
 - Account state is written with `0600` permissions and lock-protected read-modify-write updates. OAuth credentials are never written to session files or this repository.

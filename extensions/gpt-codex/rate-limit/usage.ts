@@ -69,8 +69,10 @@ function parsePayload(payload: UsagePayload): RateLimitSnapshot {
 		(secondaryLimit !== fiveHourLimit ? secondaryLimit : undefined) ??
 		(!secondaryLimit && primaryLimit !== fiveHourLimit ? primaryLimit : undefined);
 
+	const planType =
+		typeof payload.plan_type === "string" ? payload.plan_type.trim().toLowerCase() || undefined : undefined;
 	return {
-		planType: payload.plan_type,
+		planType,
 		fiveHourLimit,
 		weeklyLimit,
 	};

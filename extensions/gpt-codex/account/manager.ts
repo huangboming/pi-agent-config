@@ -21,7 +21,12 @@ import {
 	removeCodexAccount,
 	saveCodexCredential,
 } from "./auth.ts";
-import { type AccountStore, type CodexCredential, readAccountStore } from "./store.ts";
+import {
+	type AccountStore,
+	type CodexCredential,
+	readAccountStore,
+	saveAccountAlias,
+} from "./store.ts";
 import { shortenAccountId, uniqueAccountDisplayIds } from "../common/account-id.ts";
 import { openUrl } from "../common/browser.ts";
 import { errorMessage } from "../common/errors.ts";
@@ -79,6 +84,28 @@ function accountLoginInteraction(ctx: ExtensionCommandContext): AuthInteraction 
 	};
 }
 
+function accountDisplayName(store: AccountStore, accountId: string, fallback?: string): string {
+	return store.accounts[accountId]?.alias ?? fallback ?? shortenAccountId(accountId);
+}
+
+async function offerAccountAlias(ctx: ExtensionCommandContext, accountId: string): Promise<string | undefined> {
+	const existingAlias = readAccountStore().accounts[accountId]?.alias;
+	if (existingAlias) return existingAlias;
+
+	const value = await ctx.ui.input(
+		`Optional alias for ${shortenAccountId(accountId)}`,
+		"Leave blank to use the account ID",
+	);
+	if (value === undefined || !value.trim()) return undefined;
+
+	try {
+		return saveAccountAlias(accountId, value);
+	} catch (error) {
+		ctx.ui.notify(`Account saved, but alias was not set: ${errorMessage(error)}`, "warning");
+		return undefined;
+	}
+}
+
 async function addAccount(
 	ctx: ExtensionCommandContext,
 	status: RateLimitsStatusController,
@@ -88,11 +115,11 @@ async function addAccount(
 		const credential = await loginCodex(accountLoginInteraction(ctx));
 		saveCodexCredential(credential);
 		sessionAccount.select(credential.accountId);
+
+		const alias = await offerAccountAlias(ctx, credential.accountId);
 		status.reconfigure(ctx);
-		ctx.ui.notify(
-			`Using ${shortenAccountId(credential.accountId)} in this session. New sessions will start with it.`,
-			"info",
-		);
+		const displayName = alias ?? accountDisplayName(readAccountStore(), credential.accountId);
+		ctx.ui.notify(`Using ${displayName} in this session. New sessions will start with it.`, "info");
 	} catch (error) {
 		const message = errorMessage(error);
 		if (message !== "Login cancelled") ctx.ui.notify(`Failed to add account: ${message}`, "error");
@@ -111,6 +138,7 @@ function sortedAccountIds(store: AccountStore, currentAccountId: string | undefi
 
 type AccountRow = {
 	accountId: string;
+	displayName: string;
 	credential: CodexCredential;
 	item: SelectItem;
 };
@@ -123,10 +151,11 @@ function buildAccountRows(store: AccountStore, currentAccountId: string | undefi
 		const entry = store.accounts[accountId];
 		if (!entry) throw new Error(`missing account ${accountId}`);
 
-		const displayId = displayIds.get(accountId) ?? accountId;
-		const label = accountId === currentAccountId ? `● current · ${displayId}` : displayId;
+		const displayName = accountDisplayName(store, accountId, displayIds.get(accountId));
+		const label = accountId === currentAccountId ? `● ${displayName}` : displayName;
 		return {
 			accountId,
+			displayName,
 			credential: entry.credential,
 			item: { value: accountId, label, description: "loading limits…" },
 		};
@@ -162,7 +191,35 @@ function switchToAccount(
 ): void {
 	sessionAccount.select(row.accountId);
 	status.reconfigure(ctx);
-	ctx.ui.notify(`Using ${shortenAccountId(row.accountId)} in this session. New sessions will start with it.`, "info");
+	ctx.ui.notify(`Using ${row.displayName} in this session. New sessions will start with it.`, "info");
+}
+
+async function editAccountAlias(
+	ctx: ExtensionCommandContext,
+	accountId: string,
+	status: RateLimitsStatusController,
+	sessionAccount: SessionAccountController,
+): Promise<void> {
+	const account = readAccountStore().accounts[accountId];
+	if (!account) {
+		ctx.ui.notify(`Account ${shortenAccountId(accountId)} is no longer saved.`, "warning");
+		return;
+	}
+
+	const value = await ctx.ui.input(
+		`Alias for ${account.alias ?? shortenAccountId(accountId)}`,
+		account.alias ? "Leave blank to clear the alias" : "Enter an alias or leave blank",
+	);
+	if (value === undefined || (!account.alias && !value.trim())) return;
+
+	try {
+		const alias = saveAccountAlias(accountId, value);
+		const message = alias ? `Account alias set to ${alias}.` : `Cleared alias for ${shortenAccountId(accountId)}.`;
+		ctx.ui.notify(message, "info");
+		if (sessionAccount.getAccountId() === accountId) status.reconfigure(ctx);
+	} catch (error) {
+		ctx.ui.notify(`Failed to update account alias: ${errorMessage(error)}`, "error");
+	}
 }
 
 function removeStoredAccount(
@@ -171,20 +228,25 @@ function removeStoredAccount(
 	status: RateLimitsStatusController,
 	sessionAccount: SessionAccountController,
 ): void {
+	const displayName = accountDisplayName(readAccountStore(), accountId);
 	const wasCurrent = sessionAccount.getAccountId() === accountId;
 	const result = removeCodexAccount(accountId);
 	if (wasCurrent) status.reconfigure(ctx);
 
 	if (!result.existed) {
-		ctx.ui.notify(`Account ${shortenAccountId(accountId)} was already removed.`, "warning");
+		ctx.ui.notify(`Account ${displayName} was already removed.`, "warning");
 		return;
 	}
 
 	const suffix = wasCurrent ? " Select another account before the next request." : "";
-	ctx.ui.notify(`Removed ${shortenAccountId(accountId)}.${suffix}`, wasCurrent ? "warning" : "info");
+	ctx.ui.notify(`Removed ${displayName}.${suffix}`, wasCurrent ? "warning" : "info");
 }
 
-type AccountHubResult = { type: "switch"; row: AccountRow } | { type: "add" } | { type: "remove"; accountId: string };
+type AccountHubResult =
+	| { type: "switch"; row: AccountRow }
+	| { type: "add" }
+	| { type: "edit-alias"; accountId: string }
+	| { type: "remove"; accountId: string };
 
 async function selectAccountHubAction(
 	ctx: ExtensionCommandContext,
@@ -267,7 +329,7 @@ async function selectAccountHubAction(
 							]);
 					const help = configTab
 						? "↵/space change · r refresh · tab accounts · esc"
-						: "↵ switch · a add · d remove · r refresh · tab config · esc";
+						: "↵ switch · a add · e alias · d remove · r refresh · tab config · esc";
 					return [
 						...topBorder.render(width),
 						line(theme.fg("accent", theme.bold("ChatGPT accounts")), width),
@@ -297,7 +359,10 @@ async function selectAccountHubAction(
 						if (matchesKey(data, "r")) void status.refresh(ctx, { force: true, notify: true });
 						else configList.handleInput(data);
 					} else if (matchesKey(data, "a")) close({ type: "add" });
-					else if (matchesKey(data, "d") || matchesKey(data, Key.delete)) {
+					else if (matchesKey(data, "e")) {
+						const accountId = accountList?.getSelectedItem()?.value;
+						if (accountId) close({ type: "edit-alias", accountId });
+					} else if (matchesKey(data, "d") || matchesKey(data, Key.delete)) {
 						const accountId = accountList?.getSelectedItem()?.value;
 						if (accountId) close({ type: "remove", accountId });
 					} else if (matchesKey(data, "r")) refreshRows();
@@ -328,6 +393,7 @@ async function showAccountHub(
 	if (!result) return;
 	if (result.type === "switch") return switchToAccount(ctx, result.row, status, sessionAccount);
 	if (result.type === "add") return addAccount(ctx, status, sessionAccount);
+	if (result.type === "edit-alias") return editAccountAlias(ctx, result.accountId, status, sessionAccount);
 	return removeStoredAccount(ctx, result.accountId, status, sessionAccount);
 }
 
