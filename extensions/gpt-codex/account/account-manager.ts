@@ -40,8 +40,8 @@ import {
 	fetchGptRateLimits,
 	formatGptRateLimitDescription,
 	shortenAccountId,
-} from "./rate-limits.ts";
-import type { RateLimitsStatusController } from "./rate-limits-status.ts";
+} from "../rate-limit/rate-limits.ts";
+import type { RateLimitsStatusController } from "../rate-limit/rate-limits-status.ts";
 
 const PRIMARY_COMMAND = "gpt-codex";
 

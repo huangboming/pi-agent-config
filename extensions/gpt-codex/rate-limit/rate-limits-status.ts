@@ -4,8 +4,8 @@ import {
 	DEFAULT_RATE_LIMITS_STATUS_SETTINGS,
 	readRateLimitsStatusSettings,
 	type RateLimitsStatusSettings,
-} from "./account-store.ts";
-import { CODEX_PROVIDER, getActiveCodexCredential } from "./codex-auth.ts";
+} from "../account/account-store.ts";
+import { CODEX_PROVIDER, getActiveCodexCredential } from "../account/codex-auth.ts";
 import {
 	describeGptRateLimitError,
 	fetchGptRateLimits,
