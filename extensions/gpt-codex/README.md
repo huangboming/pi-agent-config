@@ -21,5 +21,6 @@ Session-scoped multi-account ChatGPT OAuth and subscription quota status for Pi'
 - Account state is written with `0600` permissions and lock-protected read-modify-write updates. OAuth credentials are never written to session files or this repository.
 - The management command is TUI-only; provider registration and session restoration are not.
 - Quota requests use the current session account, time out after 5 seconds, and back off for 60 seconds after failure. Refresh cancellation is independent of agent cancellation.
+- Switching models within `openai-codex` preserves the quota display, any in-flight request, refresh schedule, and failure backoff without triggering a new request.
 
 `PI_GPT_LIMITS_USAGE_URL` overrides the quota endpoint for testing.

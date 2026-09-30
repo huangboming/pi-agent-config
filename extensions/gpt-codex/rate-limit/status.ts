@@ -168,7 +168,10 @@ export function registerRateLimitsStatus(
 	}
 
 	pi.on("session_start", (_event, ctx) => start(ctx));
-	pi.on("model_select", (_event, ctx) => start(ctx));
+	pi.on("model_select", (event, ctx) => {
+		if (event.previousModel?.provider === CODEX_PROVIDER && event.model.provider === CODEX_PROVIDER) return;
+		start(ctx);
+	});
 	pi.on("tool_execution_end", (_event, ctx) => {
 		if (settings.refreshOnToolExecutionEnd) void refreshStatus(ctx);
 	});
