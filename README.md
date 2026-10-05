@@ -5,7 +5,7 @@ My opinionated, version-controlled configuration for [Pi](https://pi.dev), publi
 ## What is included
 
 - Custom extensions, skills, prompts, and Precision Cockpit themes
-- Pinned third-party Pi packages in `settings.json`
+- [Managed Pi settings, package pins, and fullscreen shortcuts](settings/README.md)
 - Global agent instructions in `APPEND_SYSTEM.md`
 - An optional [agy status line](integrations/agy/README.md)
 
@@ -19,9 +19,14 @@ cd pi-agent-config
 ./scripts/setup.sh
 ```
 
-The setup script installs the pinned third-party packages, registers the current checkout as a local Pi package, and links `APPEND_SYSTEM.md` into `~/.pi/agent`. It refuses to replace an existing file or a different symlink.
+The setup script:
 
-Run `/reload` in Pi after setup or after changing a loaded resource.
+- installs the pinned third-party packages;
+- registers the current checkout as a local Pi package;
+- merges the non-`packages` entries from `settings/settings.json` and all entries from `settings/keybindings.json` into `~/.pi/agent`, preserving unrelated runtime entries;
+- links `APPEND_SYSTEM.md` into `~/.pi/agent`, refusing to replace an existing file or a different symlink.
+
+Run the setup script again after changing managed settings or keybindings. Run `/reload` in Pi after setup or after changing a loaded resource.
 
 To install only the package resources without the personal setup:
 

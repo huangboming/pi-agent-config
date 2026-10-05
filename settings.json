@@ -1,7 +1,0 @@
-{
-  "packages": [
-    "npm:@cortexkit/pi-magic-context@0.44.1",
-    "npm:pi-web-access@0.33.0",
-    "npm:@narumitw/pi-btw@0.61.1"
-  ]
-}
