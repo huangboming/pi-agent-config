@@ -27,15 +27,15 @@ The non-`packages` entries in [`settings.json`](settings.json) are merged into `
 
 Only these actions are overridden. Pi's other default keybindings remain unchanged.
 
-## Package pins
+## Managed packages
 
-The `packages` array in `settings.json` pins the third-party packages installed by setup:
+The `packages` array in `settings.json` declares the third-party packages installed by setup:
 
-- `npm:@cortexkit/pi-magic-context@0.44.1`
-- `npm:pi-web-access@0.33.0`
-- `npm:@narumitw/pi-btw@0.61.1`
+- `npm:@cortexkit/pi-magic-context`
+- `npm:pi-web-access`
+- `npm:@narumitw/pi-btw`
 
-The local checkout is installed separately as a Pi package.
+Versions are deliberately omitted so the packages can track current releases alongside Pi. Setup installs the latest release available each time it runs; between runs, Pi continues using the installed versions. Run `pi update --extensions` to update them without rerunning the full setup. The local checkout is installed separately as a Pi package.
 
 ## Applying changes
 

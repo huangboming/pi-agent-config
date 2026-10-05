@@ -1,8 +1,8 @@
 {
   "packages": [
-    "npm:@cortexkit/pi-magic-context@0.44.1",
-    "npm:pi-web-access@0.33.0",
-    "npm:@narumitw/pi-btw@0.61.1"
+    "npm:@cortexkit/pi-magic-context",
+    "npm:pi-web-access",
+    "npm:@narumitw/pi-btw"
   ],
   "theme": "precision-cockpit-light/precision-cockpit-dark",
   "fullscreenExitOutput": "resume-hint",
