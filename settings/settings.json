@@ -5,6 +5,8 @@
     "npm:@narumitw/pi-btw"
   ],
   "theme": "precision-cockpit-light/precision-cockpit-dark",
+  "treeFilterMode": "user-only",
+  "collapseChangelog": true,
   "fullscreenExitOutput": "resume-hint",
   "fullscreenWheelScrollLines": 3
 }

@@ -9,6 +9,8 @@ The non-`packages` entries in [`settings.json`](settings.json) are merged into `
 | Setting | Managed value | Effect |
 | --- | --- | --- |
 | `theme` | `precision-cockpit-light/precision-cockpit-dark` | Uses the matching Precision Cockpit theme for the terminal's light or dark appearance. |
+| `treeFilterMode` | `user-only` | Opens `/tree` showing user messages by default; other filters remain available in the tree view. |
+| `collapseChangelog` | `true` | Shows a condensed changelog after Pi updates. |
 | `fullscreenExitOutput` | `resume-hint` | Prints only the resume hint when fullscreen mode exits instead of replaying the transcript into terminal scrollback. |
 | `fullscreenWheelScrollLines` | `3` | Scrolls three transcript lines per mouse-wheel event in fullscreen mode. |
 
