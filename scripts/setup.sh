@@ -4,9 +4,11 @@ set -euo pipefail
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 settings_file="$repo_dir/settings/settings.json"
 keybindings_file="$repo_dir/settings/keybindings.json"
+web_search_settings_file="$repo_dir/settings/extensions/web-search.json"
 agent_dir="$HOME/.pi/agent"
 runtime_settings_file="$agent_dir/settings.json"
 runtime_keybindings_file="$agent_dir/keybindings.json"
+runtime_web_search_settings_file="$agent_dir/web-search.json"
 append_system_source="$repo_dir/APPEND_SYSTEM.md"
 append_system_link="$agent_dir/APPEND_SYSTEM.md"
 
@@ -29,7 +31,7 @@ if [[ -e "$append_system_link" || -L "$append_system_link" ]]; then
 fi
 
 package_sources=$(
-	node - "$settings_file" "$keybindings_file" <<'NODE'
+	node - "$settings_file" "$keybindings_file" "$web_search_settings_file" <<'NODE'
 const { readFileSync } = require("node:fs");
 
 function readObject(path, name) {
@@ -42,6 +44,7 @@ function readObject(path, name) {
 
 const settings = readObject(process.argv[2], "settings.json");
 const keybindings = readObject(process.argv[3], "keybindings.json");
+readObject(process.argv[4], "web-search.json");
 if (!Array.isArray(settings.packages)) {
 	throw new Error("settings.json must contain a packages array");
 }
@@ -74,7 +77,7 @@ done <<< "$package_sources"
 printf 'Installing local package from %s\n' "$repo_dir"
 pi install "$repo_dir"
 
-node - "$settings_file" "$keybindings_file" "$runtime_settings_file" "$runtime_keybindings_file" <<'NODE'
+node - "$settings_file" "$keybindings_file" "$web_search_settings_file" "$runtime_settings_file" "$runtime_keybindings_file" "$runtime_web_search_settings_file" <<'NODE'
 const { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } = require("node:fs");
 const { basename, dirname, join } = require("node:path");
 
@@ -85,6 +88,16 @@ function readObject(path, name, fallback) {
 		throw new Error(`${name} must contain a JSON object`);
 	}
 	return value;
+}
+
+function mergeObjects(base, managed) {
+	const result = { ...base };
+	for (const [key, value] of Object.entries(managed)) {
+		const isObject = typeof value === "object" && value !== null && !Array.isArray(value);
+		const currentIsObject = typeof result[key] === "object" && result[key] !== null && !Array.isArray(result[key]);
+		result[key] = isObject ? mergeObjects(currentIsObject ? result[key] : {}, value) : value;
+	}
+	return result;
 }
 
 function writeJsonAtomic(path, value) {
@@ -101,17 +114,20 @@ function writeJsonAtomic(path, value) {
 
 const sourceSettings = readObject(process.argv[2], "repository settings.json", {});
 const sourceKeybindings = readObject(process.argv[3], "repository keybindings.json", {});
-const runtimeSettings = readObject(process.argv[4], "runtime settings.json", {});
-const runtimeKeybindings = readObject(process.argv[5], "runtime keybindings.json", {});
+const sourceWebSearchSettings = readObject(process.argv[4], "repository web-search.json", {});
+const runtimeSettings = readObject(process.argv[5], "runtime settings.json", {});
+const runtimeKeybindings = readObject(process.argv[6], "runtime keybindings.json", {});
+const runtimeWebSearchSettings = readObject(process.argv[7], "runtime web-search.json", {});
 const { packages: _packages, ...managedSettings } = sourceSettings;
 
 // Remove superseded preferences so Pi's defaults apply.
 for (const setting of ["quietStartup"]) delete runtimeSettings[setting];
 
-writeJsonAtomic(process.argv[4], { ...runtimeSettings, ...managedSettings });
-writeJsonAtomic(process.argv[5], { ...runtimeKeybindings, ...sourceKeybindings });
+writeJsonAtomic(process.argv[5], { ...runtimeSettings, ...managedSettings });
+writeJsonAtomic(process.argv[6], { ...runtimeKeybindings, ...sourceKeybindings });
+writeJsonAtomic(process.argv[7], mergeObjects(runtimeWebSearchSettings, sourceWebSearchSettings));
 NODE
-printf 'Synced settings and keybindings into %s\n' "$agent_dir"
+printf 'Synced settings, keybindings, and extension configuration into %s\n' "$agent_dir"
 
 if [[ "$create_append_system_link" == true ]]; then
 	mkdir -p "$(dirname -- "$append_system_link")"

@@ -1,6 +1,6 @@
 # Managed Pi Settings
 
-This directory is the version-controlled source for the Pi preferences and keybindings applied by [`scripts/setup.sh`](../scripts/setup.sh). You do not need to copy these files manually.
+This directory is the version-controlled source for the Pi preferences, keybindings, and non-secret extension configuration applied by [`scripts/setup.sh`](../scripts/setup.sh). You do not need to copy these files manually.
 
 ## TUI preferences
 
@@ -39,6 +39,12 @@ The `packages` array in `settings.json` declares the third-party packages instal
 
 Versions are deliberately omitted so the packages can track current releases alongside Pi. Setup installs the latest release available each time it runs; between runs, Pi continues using the installed versions. Run `pi update --extensions` to update them without rerunning the full setup. The local checkout is installed separately as a Pi package.
 
+## Managed extension configuration
+
+[`extensions/web-search.json`](extensions/web-search.json) is deeply merged into `~/.pi/agent/web-search.json`. It allows the `198.18.0.0/15` synthetic range used by TUN/fake-IP proxies such as Surge, so `pi-web-access` can fetch public hosts resolved through that range. Other local fields—including credentials and unrelated `ssrf` options—are preserved.
+
+Only non-secret shared defaults belong in this directory. Keep credentials and machine-specific account data in the runtime file or environment variables.
+
 ## Applying changes
 
 From the repository root, run:
@@ -47,4 +53,4 @@ From the repository root, run:
 ./scripts/setup.sh
 ```
 
-Setup preserves unrelated runtime settings and keybindings while merging the entries managed here. Run `/reload` in Pi afterward.
+Setup preserves unrelated runtime settings, keybindings, and extension configuration while merging the entries managed here. Run `/reload` in Pi afterward.

@@ -34,7 +34,7 @@ Run `/reload` in an open Pi session after setup.
 
 - installs the unversioned third-party package sources from `settings/settings.json`;
 - installs this checkout as a local Pi package;
-- merges managed settings and keybindings into `~/.pi/agent` without replacing unrelated entries;
+- merges managed settings, keybindings, and extension configuration into `~/.pi/agent` without replacing unrelated entries;
 - links `APPEND_SYSTEM.md` into `~/.pi/agent` and refuses to overwrite a different existing path.
 
 To install only the extensions, skills, prompts, and themes—without the personal settings or third-party packages—run:
