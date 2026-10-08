@@ -4,6 +4,7 @@
     "npm:pi-web-access",
     "npm:@narumitw/pi-btw"
   ],
+  "defaultTools": ["+codemode"],
   "theme": "precision-cockpit-light/precision-cockpit-dark",
   "treeFilterMode": "user-only",
   "collapseChangelog": true,

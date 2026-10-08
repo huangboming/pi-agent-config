@@ -16,6 +16,12 @@ The non-`packages` entries in [`settings.json`](settings.json) are merged into `
 
 `quietStartup` is deliberately not managed. Setup removes any existing value so Pi uses its default startup display.
 
+## Tool selection
+
+`defaultTools` is managed as `["+codemode"]`, enabling codemode alongside Pi's default tools rather than replacing them.
+
+`codemode.mode` is intentionally not managed. Its default `on` mode keeps `read`, `bash`, `edit`, and `write` directly callable; tools are not forced through codemode as they would be in `only` mode.
+
 ## Fullscreen keybindings
 
 [`keybindings.json`](keybindings.json) adds four fullscreen navigation shortcuts:
