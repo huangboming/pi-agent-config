@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json",
+  "enabled": true,
+  "historian": {
+    "pi": {
+      "model": "openai/gpt-6-luna"
+    }
+  },
+  "dreamer": {
+    "pi": {
+      "model": "openai/gpt-6-luna"
+    }
+  },
+  "embedding": {
+    "provider": "local",
+    "model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+    "local_dtype": "q8"
+  },
+  "memory": {
+    "git_commit_indexing": {
+      "enabled": true,
+      "since_days": 365,
+      "max_commits": 2000
+    }
+  }
+}

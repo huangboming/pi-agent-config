@@ -49,6 +49,8 @@ Versions are deliberately omitted so the packages can track current releases alo
 
 [`extensions/web-search.json`](extensions/web-search.json) is deeply merged into `~/.pi/agent/web-search.json`. It allows the `198.18.0.0/15` synthetic range used by TUN/fake-IP proxies such as Surge, so `pi-web-access` can fetch public hosts resolved through that range. Other local fields—including credentials and unrelated `ssrf` options—are preserved.
 
+[`extensions/magic-context.jsonc`](extensions/magic-context.jsonc) is deeply merged into `~/.config/cortexkit/magic-context.jsonc`. It enables Magic Context, selects `openai/gpt-6-luna` for Pi's historian and dreamer, uses the local q8 `Xenova/paraphrase-multilingual-MiniLM-L12-v2` embedding model, and indexes up to 2,000 non-merge commits from each project's last 365 days. Host-specific OpenCode and OMP settings and other unrelated local fields are preserved; setup removes the obsolete `sidekick` block that Magic Context 0.47 no longer supports.
+
 Only non-secret shared defaults belong in this directory. Keep credentials and machine-specific account data in the runtime file or environment variables.
 
 ## Applying changes
