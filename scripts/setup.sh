@@ -202,7 +202,7 @@ for (const setting of ["quietStartup"]) delete runtimeSettings[setting];
 // Magic Context 0.47 removed this legacy agent block.
 delete runtimeMagicContextSettings.sidekick;
 
-writeJsonAtomic(process.argv[6], { ...runtimeSettings, ...managedSettings });
+writeJsonAtomic(process.argv[6], mergeObjects(runtimeSettings, managedSettings));
 writeJsonAtomic(process.argv[7], { ...runtimeKeybindings, ...sourceKeybindings });
 writeJsonAtomic(process.argv[8], mergeObjects(runtimeWebSearchSettings, sourceWebSearchSettings));
 writeJsonAtomic(process.argv[9], mergeObjects(runtimeMagicContextSettings, sourceMagicContextSettings));

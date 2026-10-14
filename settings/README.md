@@ -2,9 +2,22 @@
 
 This directory is the version-controlled source for the Pi preferences, keybindings, and non-secret extension configuration applied by [`scripts/setup.sh`](../scripts/setup.sh). You do not need to copy these files manually.
 
-## TUI preferences
+The non-`packages` entries in [`settings.json`](settings.json) are deeply merged into `~/.pi/agent/settings.json`. Unmanaged nested fields are preserved; managed arrays such as `enabledModels` replace their runtime values.
 
-The non-`packages` entries in [`settings.json`](settings.json) are merged into `~/.pi/agent/settings.json`.
+## Model and thinking defaults
+
+| Setting | Managed value | Effect |
+| --- | --- | --- |
+| `defaultProvider` | `openai-codex` | Uses the ChatGPT subscription provider for new sessions. |
+| `defaultModel` | `gpt-6.1-sol` | Selects GPT-6.1 Sol for new sessions. |
+| `defaultThinkingLevel` | `xhigh` | Sets the default thinking level for new sessions. |
+| `enabledModels` | `openai-codex/gpt-5.6-sol`, `openai-codex/gpt-6.1-sol` | Defines the startup candidates and `Ctrl+P` model-cycling scope. |
+
+CLI options and project settings can override these defaults. Per-model `modelThinkingLevels` entries take precedence over `defaultThinkingLevel`. Resuming an existing session restores its saved model and thinking level.
+
+Keep the default model in `enabledModels`; otherwise a new session starts with the first available scoped model. Other models remain selectable through `/model`.
+
+## TUI preferences
 
 | Setting | Managed value | Effect |
 | --- | --- | --- |
@@ -13,6 +26,7 @@ The non-`packages` entries in [`settings.json`](settings.json) are merged into `
 | `collapseChangelog` | `true` | Shows a condensed changelog after Pi updates. |
 | `fullscreenExitOutput` | `resume-hint` | Prints only the resume hint when fullscreen mode exits instead of replaying the transcript into terminal scrollback. |
 | `fullscreenWheelScrollLines` | `3` | Scrolls three transcript lines per mouse-wheel event in fullscreen mode. |
+| `terminal.showTerminalProgress` | `true` | Shows a working indicator in the tab bar of terminals that support OSC 9;4. |
 
 `quietStartup` is deliberately not managed. Setup removes any existing value so Pi uses its default startup display.
 
